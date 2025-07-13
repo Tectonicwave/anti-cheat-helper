@@ -131,10 +131,12 @@
     <ClCompile Include="decoder\decoder.cpp" />
     <ClCompile Include="hook_checker.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Vac3\vac_emulation_scanner.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="decoder\decoder.h" />
     <ClInclude Include="hook_checker.h" />
+    <ClInclude Include="Vac3\vac_emulation_scanner.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

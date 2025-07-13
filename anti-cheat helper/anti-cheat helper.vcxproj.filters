@@ -24,12 +24,18 @@
     <ClCompile Include="decoder\decoder.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Vac3\vac_emulation_scanner.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="hook_checker.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="decoder\decoder.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Vac3\vac_emulation_scanner.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

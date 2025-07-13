@@ -7,6 +7,7 @@
 #include <windows.h>
 #include <tlhelp32.h>
 #include <psapi.h>
+#include "Vac3/vac_emulation_scanner.h"
 
 extern "C" int guarded_main();
 
@@ -156,6 +157,9 @@ int guarded_main() {
 				}
 			}
 		}
+
+		// <<< Add this line to run the VAC-like manual map & shellcode detection >>>
+		vac_emulation::run_vac_like_scanner(pid);
 
 		if (found_hooks) {
 			std::wcout << L"\nAll suspicious hooks have been listed above.\n";
