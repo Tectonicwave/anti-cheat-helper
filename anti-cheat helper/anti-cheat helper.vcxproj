@@ -129,14 +129,27 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="decoder\decoder.cpp" />
-    <ClCompile Include="hook_checker.cpp" />
+    <ClCompile Include="Vac3\hook_detector.cpp" />
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="Vac3\vac_emulation_scanner.cpp" />
+    <ClCompile Include="utils\module_utils.cpp" />
+    <ClCompile Include="utils\reporting.cpp" />
+    <ClCompile Include="Vac3\iat_hook_detector.cpp" />
+    <ClCompile Include="Vac3\pe_analysis.cpp" />
+    <ClCompile Include="Vac3\signature_scanner.cpp" />
+    <ClCompile Include="Vac3\thread_inspection.cpp" />
+    <ClCompile Include="Vac3\vac3_emulation.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="decoder\decoder.h" />
-    <ClInclude Include="hook_checker.h" />
-    <ClInclude Include="Vac3\vac_emulation_scanner.h" />
+    <ClInclude Include="Vac3\hook_detector.h" />
+    <ClInclude Include="utils\hex_utils.h" />
+    <ClInclude Include="utils\module_utils.h" />
+    <ClInclude Include="utils\reporting.h" />
+    <ClInclude Include="Vac3\iat_hook_detector.h" />
+    <ClInclude Include="Vac3\pe_analysis.h" />
+    <ClInclude Include="Vac3\signature_scanner.h" />
+    <ClInclude Include="Vac3\thread_inspection.h" />
+    <ClInclude Include="Vac3\vac3_emulation.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
