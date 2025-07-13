@@ -1,0 +1,1 @@
+Anti-Cheat Helper is a specialized usermode scanning library designed to assist in detecting cheats in Counter-Strike 2 (CS2). its designed to mimic what valve3 does to identify injected cheats without kernel-mode components.
