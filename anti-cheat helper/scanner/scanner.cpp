@@ -100,7 +100,7 @@ namespace scanner {
 
             if (!hooks.empty()) {
                 found_hooks = true;
-                utils::add_log("[ALERT] Hooks detected in module: %ws", module_name.c_str());
+                utils::add_log("[hook] [ALERT] Hooks detected in module: %ws", module_name.c_str());
 
                 for (const auto& hook : hooks) {
                     utils::add_log("[hook] [%ws] at offset 0x%llX jumping to 0x%llX",
