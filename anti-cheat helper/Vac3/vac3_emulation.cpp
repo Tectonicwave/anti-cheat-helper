@@ -9,6 +9,7 @@
 #include <unordered_set>
 #include <algorithm>
 #include <sstream>
+#include "../utils/reporting.h"
 
 #undef min
 
@@ -87,138 +88,135 @@ namespace vac_emulation {
 	}
 
 	// Scan suspicious executable regions (manual maps, RWX, etc) with whitelist caches
-	inline void scan_suspicious_exec_regions(HANDLE hProc, const std::vector<module_range_t>& modules) {
-		SYSTEM_INFO sysInfo;
-		GetSystemInfo(&sysInfo);
-		uint8_t* addr = (uint8_t*)sysInfo.lpMinimumApplicationAddress;
-		uint8_t* max = (uint8_t*)sysInfo.lpMaximumApplicationAddress;
+    inline void scan_suspicious_exec_regions(HANDLE hProc, const std::vector<module_range_t>& modules) {
+        SYSTEM_INFO sysInfo;
+        GetSystemInfo(&sysInfo);
+        uint8_t* addr = (uint8_t*)sysInfo.lpMinimumApplicationAddress;
+        uint8_t* max = (uint8_t*)sysInfo.lpMaximumApplicationAddress;
 
-		MEMORY_BASIC_INFORMATION mbi;
+        MEMORY_BASIC_INFORMATION mbi;
 
-		while (addr < max) {
-			if (!VirtualQueryEx(hProc, addr, &mbi, sizeof(mbi))) break;
+        while (addr < max) {
+            if (!VirtualQueryEx(hProc, addr, &mbi, sizeof(mbi))) break;
 
-			bool is_exec = (mbi.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)) != 0;
+            bool is_exec = (mbi.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)) != 0;
 
-			if (mbi.State == MEM_COMMIT && is_exec && mbi.Type == MEM_PRIVATE) {
-				uintptr_t baseAddr = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
+            if (mbi.State == MEM_COMMIT && is_exec && mbi.Type == MEM_PRIVATE) {
+                uintptr_t baseAddr = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
 
-				// added safe location for now yes lazy who cares
-				if (is_known_safe_exec_region(baseAddr)) {
-					addr += mbi.RegionSize;
-					continue;
-				}
+                if (is_known_safe_exec_region(baseAddr)) {
+                    addr += mbi.RegionSize;
+                    continue;
+                }
 
-				// Deduplication: only report once per base address
-				if (g_reported_regions.find(baseAddr) == g_reported_regions.end()) {
-					// Skip if region belongs to loaded modules
-					if (!region_in_module_list(hProc, mbi.BaseAddress, modules)) {
-						// Skip if inside trusted module ranges
-						if (!is_address_in_trusted_module(baseAddr, modules)) {
-							std::vector<uint8_t> buffer(mbi.RegionSize);
-							SIZE_T bytesRead;
-							if (ReadProcessMemory(hProc, mbi.BaseAddress, buffer.data(), mbi.RegionSize, &bytesRead)) {
-								bool has_pe = is_pe_header(buffer.data(), bytesRead);
+                if (g_reported_regions.find(baseAddr) == g_reported_regions.end()) {
+                    if (!region_in_module_list(hProc, mbi.BaseAddress, modules)) {
+                        if (!is_address_in_trusted_module(baseAddr, modules)) {
+                            std::vector<uint8_t> buffer(mbi.RegionSize);
+                            SIZE_T bytesRead;
+                            if (ReadProcessMemory(hProc, mbi.BaseAddress, buffer.data(), mbi.RegionSize, &bytesRead)) {
+                                bool has_pe = is_pe_header(buffer.data(), bytesRead);
 
-								bool has_code_pattern = false;
-								for (size_t i = 0; i + 5 < bytesRead; i++) {
-									if ((buffer[i] == 0x55 && buffer[i + 1] == 0x8B) || // push ebp; mov ebp, esp
-										((buffer[i] == 0x40 || buffer[i] == 0x48) && buffer[i + 1] == 0x89)) { // mov with REX prefix
-										has_code_pattern = true;
-										break;
-									}
-								}
+                                bool has_code_pattern = false;
+                                for (size_t i = 0; i + 5 < bytesRead; i++) {
+                                    if ((buffer[i] == 0x55 && buffer[i + 1] == 0x8B) ||
+                                        ((buffer[i] == 0x40 || buffer[i] == 0x48) && buffer[i + 1] == 0x89)) {
+                                        has_code_pattern = true;
+                                        break;
+                                    }
+                                }
 
-								if (has_pe || has_code_pattern) {
-									std::wstringstream ws;
-									ws << L"[VAC3-LIKE] Suspicious exec region @ 0x" << std::hex << baseAddr
-										<< L" Size: " << std::dec << mbi.RegionSize / 1024 << L" KB ";
+                                if (has_pe || has_code_pattern) {
+                                    // Build log line prefix
+                                    utils::add_log("[manual] Suspicious exec region @ 0x%p Size: %zu KB %s%s%s",
+                                        (void*)baseAddr,
+                                        mbi.RegionSize / 1024,
+                                        has_pe ? "[Partial PE Header] " : "",
+                                        has_code_pattern && !has_pe ? "[Code pattern] " : "",
+                                        (mbi.Protect & PAGE_EXECUTE_READWRITE) ? "[RWX] " : ((mbi.Protect & PAGE_EXECUTE_READ) ? "[RX] " : ""));
 
-									if (has_pe) ws << L"[Partial PE Header] ";
-									else if (has_code_pattern) ws << L"[Code pattern] ";
+                                    // Build hex dump snippet
+                                    size_t snippet_len = std::min<size_t>(32, bytesRead);
+                                    std::string hex_snippet = "  Hex dump snippet: ";
+                                    char hex_byte[4];
+                                    for (size_t j = 0; j < snippet_len; j++) {
+                                        snprintf(hex_byte, sizeof(hex_byte), "%02X ", buffer[j]);
+                                        hex_snippet += hex_byte;
+                                    }
 
-									if (mbi.Protect & PAGE_EXECUTE_READWRITE) ws << L"[RWX] ";
-									else if (mbi.Protect & PAGE_EXECUTE_READ) ws << L"[RX] ";
+                                    utils::add_log("%s", hex_snippet.c_str());
 
-									std::wcout << ws.str() << L"\n";
+                                    g_reported_regions.insert(baseAddr);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            addr += mbi.RegionSize;
+        }
+    }
 
-									size_t snippet_len = std::min<size_t>(32, bytesRead);
-									std::wcout << L"  Hex dump snippet: ";
-									for (size_t j = 0; j < snippet_len; j++) {
-										std::wcout << std::hex << (int)buffer[j] << L" ";
-									}
-									std::wcout << std::dec << L"\n";
+    void scan_suspicious_threads(DWORD pid, HANDLE hProc, const std::vector<module_range_t>& modules) {
+        HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+        if (snap == INVALID_HANDLE_VALUE)
+            return;
 
-									g_reported_regions.insert(baseAddr);
-								}
-							}
-						}
-					}
-				}
-			}
-			addr += mbi.RegionSize;
-		}
-	}
+        THREADENTRY32 te{};
+        te.dwSize = sizeof(te);
 
-	//Scan threads for suspicious thread start addresses outside modules with deduplication and whitelist
-	void scan_suspicious_threads(DWORD pid, HANDLE hProc, const std::vector<module_range_t>& modules) {
-		HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-		if (snap == INVALID_HANDLE_VALUE)
-			return;
+        if (Thread32First(snap, &te)) {
+            do {
+                if (te.th32OwnerProcessID != pid)
+                    continue;
 
-		THREADENTRY32 te{};
-		te.dwSize = sizeof(te);
+                HANDLE hThread = OpenThread(THREAD_QUERY_INFORMATION, FALSE, te.th32ThreadID);
+                if (hThread) {
+                    void* start = nullptr;
 
-		if (Thread32First(snap, &te)) {
-			do {
-				if (te.th32OwnerProcessID != pid)
-					continue;
+                    using NtQueryInformationThread_t = NTSTATUS(WINAPI*)(HANDLE, ULONG, PVOID, ULONG, PULONG);
+                    static NtQueryInformationThread_t NtQueryInformationThread = nullptr;
 
-				HANDLE hThread = OpenThread(THREAD_QUERY_INFORMATION, FALSE, te.th32ThreadID);
-				if (hThread) {
-					void* start = nullptr;
+                    if (!NtQueryInformationThread)
+                        NtQueryInformationThread = reinterpret_cast<NtQueryInformationThread_t>(
+                            GetProcAddress(GetModuleHandle(L"ntdll.dll"), "NtQueryInformationThread"));
 
-					using NtQueryInformationThread_t = NTSTATUS(WINAPI*)(HANDLE, ULONG, PVOID, ULONG, PULONG);
-					static NtQueryInformationThread_t NtQueryInformationThread = nullptr;
+                    if (NtQueryInformationThread) {
+                        NtQueryInformationThread(hThread, 9 /*ThreadQuerySetWin32StartAddress*/, &start, sizeof(start), nullptr);
 
-					if (!NtQueryInformationThread)
-						NtQueryInformationThread = reinterpret_cast<NtQueryInformationThread_t>(
-							GetProcAddress(GetModuleHandle(L"ntdll.dll"), "NtQueryInformationThread"));
+                        uintptr_t start_addr = reinterpret_cast<uintptr_t>(start);
 
-					if (NtQueryInformationThread) {
-						NtQueryInformationThread(hThread, 9 /*ThreadQuerySetWin32StartAddress*/, &start, sizeof(start), nullptr);
+                        if (!is_address_in_modules(start_addr, modules) && !is_address_in_trusted_module(start_addr, modules)) {
+                            if (g_reported_thread_starts.find(start_addr) == g_reported_thread_starts.end()) {
+                                g_reported_thread_starts.insert(start_addr);
 
-						uintptr_t start_addr = reinterpret_cast<uintptr_t>(start);
+                                MEMORY_BASIC_INFORMATION mbi{};
+                                if (VirtualQueryEx(hProc, start, &mbi, sizeof(mbi))) {
+                                    utils::add_log("[manual] Suspicious thread (TID %lu) entry at 0x%p in region 0x%p",
+                                        te.th32ThreadID,
+                                        (void*)start_addr,
+                                        mbi.BaseAddress);
+                                }
+                                else {
+                                    utils::add_log("[manual] Suspicious thread (TID %lu) entry at 0x%p (region query failed)",
+                                        te.th32ThreadID,
+                                        (void*)start_addr);
+                                }
+                            }
+                        }
+                    }
+                    CloseHandle(hThread);
+                }
+            } while (Thread32Next(snap, &te));
+        }
 
-						if (!is_address_in_modules(start_addr, modules) && !is_address_in_trusted_module(start_addr, modules)) {
-							if (g_reported_thread_starts.find(start_addr) == g_reported_thread_starts.end()) {
-								g_reported_thread_starts.insert(start_addr);
-
-								MEMORY_BASIC_INFORMATION mbi{};
-								if (VirtualQueryEx(hProc, start, &mbi, sizeof(mbi))) {
-									std::wcout << L"[VAC3-LIKE] Suspicious thread (TID " << te.th32ThreadID << L") entry at 0x"
-										<< std::hex << start_addr << L" in region 0x" << reinterpret_cast<uintptr_t>(mbi.BaseAddress) << std::dec << L"\n";
-								}
-								else {
-									std::wcout << L"[VAC3-LIKE] Suspicious thread (TID " << te.th32ThreadID << L") entry at 0x"
-										<< std::hex << start_addr << L" (region query failed)" << std::dec << L"\n";
-								}
-							}
-						}
-					}
-					CloseHandle(hThread);
-				}
-			} while (Thread32Next(snap, &te));
-		}
-
-		CloseHandle(snap);
-	}
+        CloseHandle(snap);
+    }
 
 	// Run the VAC3-like scanner on target process
 	void run_vac_like_scanner(DWORD target_pid) {
 		HANDLE hProc = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, target_pid);
 		if (!hProc) {
-			std::wcerr << L"[ERROR] Failed to open target process\n";
 			return;
 		}
 

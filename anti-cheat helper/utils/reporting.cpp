@@ -1,13 +1,15 @@
 #include "reporting.h"
 #include <iomanip>
 #include <sstream>
-#include <windows.h>
 
 namespace utils {
 
-	static std::wstring to_wstring(const std::string& s) {
-		return std::wstring(s.begin(), s.end());
-	}
+    std::mutex log_mutex;
+    std::vector<std::wstring> log_lines;
+
+    static std::wstring to_wstring(const std::string& s) {
+        return std::wstring(s.begin(), s.end());
+    }
 
     std::wstring string_to_wstring(const std::string& str) {
         if (str.empty()) return {};
@@ -34,6 +36,20 @@ namespace utils {
             << ", Hex: " << hex_snippet << "\n";
 
         std::cout << oss.str();
+    }
+
+    void add_log(const char* fmt, ...) {
+        char buf[512];
+        va_list args;
+        va_start(args, fmt);
+        vsnprintf(buf, sizeof(buf), fmt, args);
+        va_end(args);
+
+        // Convert char buffer to wstring (assuming ASCII only or UTF-8 - adjust if needed)std::lock_guard<std::mutex> lock(log_mutex);
+        std::wstring wbuf(buf, buf + strlen(buf));
+
+        std::lock_guard<std::mutex> lock(log_mutex);
+        log_lines.push_back(wbuf);
     }
 
 } // namespace utils
